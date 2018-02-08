@@ -25,7 +25,7 @@ Section AssociativeCommutativeReasoning.
 
   Variable A:Type.
   Variable op: A -> A -> A.
-  Infix "∘" := op (at level 40, left associativity).
+  Infix "*" := op.
 
   Hypothesis op_ac : assoc_comm op.
   Existing Instance op_ac.
@@ -33,7 +33,7 @@ Section AssociativeCommutativeReasoning.
   Hypothesis op_monoid : monoid op.
   Existing Instance op_monoid.
 
-  Lemma right_id : forall x, x ∘ unit = x.
+  Lemma right_id : forall x, x * unit = x.
   Proof.
     intros.
     rewrite commutative.
@@ -55,7 +55,7 @@ Section AssociativeCommutativeReasoning.
     match t with
     | Leaf x => x
     | Atom i => varmap_find unit i vm
-    | Node l r => op_tree vm l ∘ op_tree vm r
+    | Node l r => op_tree vm l * op_tree vm r
     end.
 
   Ltac quote_tree t :=
@@ -63,7 +63,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_foldl_acc:
     forall (l: list A) (acc1 : A) (acc2: A),
-      op_foldl (acc1 ∘ acc2) l = acc1 ∘ op_foldl acc2 l.
+      op_foldl (acc1 * acc2) l = acc1 * op_foldl acc2 l.
   Proof.
     induction l; simpl; intros; auto.
     rewrite associative.
@@ -72,7 +72,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_foldl_acc_unit:
     forall (l: list A) (acc : A),
-      op_foldl acc l = acc ∘ op_foldl unit l.
+      op_foldl acc l = acc * op_foldl unit l.
   Proof.
     intros.
     rewrite <- (right_id acc) at 1.
@@ -81,7 +81,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_foldl_app : forall l1 acc l2,
       op_foldl acc (l1 ++ l2) =
-      op_foldl acc l1 ∘ op_foldl unit l2.
+      op_foldl acc l1 * op_foldl unit l2.
   Proof.
     induction l1; simpl; intros; auto.
     apply op_foldl_acc_unit.
@@ -105,7 +105,7 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Theorem a_ex1 : forall x y z,
-      x ∘ y ∘ (x ∘ z) = x ∘ y ∘ x ∘ z.
+      x * y * (x * z) = x * y * x * z.
   Proof.
     intros.
     match goal with
@@ -131,7 +131,7 @@ Section AssociativeCommutativeReasoning.
   Fixpoint op_term_foldl (vm: varmap A) (acc:A) (l: list term) : A :=
     match l with
     | nil => acc
-    | x::xs => op_term_foldl vm (acc ∘ find_term vm x) xs
+    | x::xs => op_term_foldl vm (acc * find_term vm x) xs
     end.
 
   Fixpoint flatten_terms (t:binop_tree) : list term :=
@@ -143,7 +143,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_term_foldl_acc:
     forall (l: list term) vm (acc1 : A) (acc2: A),
-      op_term_foldl vm (acc1 ∘ acc2) l = acc1 ∘ op_term_foldl vm acc2 l.
+      op_term_foldl vm (acc1 * acc2) l = acc1 * op_term_foldl vm acc2 l.
   Proof.
     induction l; simpl; intros; auto.
     destruct a; rewrite ?associative; auto.
@@ -151,7 +151,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_term_foldl_acc_unit:
     forall (l: list term) vm (acc : A),
-      op_term_foldl vm acc l = acc ∘ op_term_foldl vm unit l.
+      op_term_foldl vm acc l = acc * op_term_foldl vm unit l.
   Proof.
     intros.
     rewrite <- (right_id acc) at 1.
@@ -160,7 +160,7 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_term_foldl_app : forall l1 vm acc l2,
       op_term_foldl vm acc (l1 ++ l2) =
-      op_term_foldl vm acc l1 ∘ op_term_foldl vm unit l2.
+      op_term_foldl vm acc l1 * op_term_foldl vm unit l2.
   Proof.
     induction l1; simpl; intros; auto.
     apply op_term_foldl_acc_unit.
@@ -176,7 +176,7 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Lemma xzy_xyz_rewrite : forall x y z,
-      x ∘ z ∘ y = x ∘ y ∘ z.
+      x * z * y = x * y * z.
   Proof.
     intros.
     rewrite ?associative.
@@ -191,7 +191,7 @@ Section AssociativeCommutativeReasoning.
       op_term_foldl vm acc l1 = op_term_foldl vm acc l2.
   Proof.
     induction 1; simpl; auto.
-    replace (acc ∘ find_term vm x) with (find_term vm x ∘ acc) by (apply commutative).
+    replace (acc * find_term vm x) with (find_term vm x * acc) by (apply commutative).
     rewrite ?op_term_foldl_acc; congruence.
     rewrite xzy_xyz_rewrite; auto.
     congruence.
@@ -207,7 +207,7 @@ Section AssociativeCommutativeReasoning.
     end.
 
   Example op_term_ex1 : forall x y z,
-      x ∘ y ∘ z ∘ x ∘ y = unit ∘ x ∘ x ∘ y ∘ y ∘ z.
+      x * y * z * x * y = unit * x * x * y * y * z.
   Proof.
     intros.
     match goal with
