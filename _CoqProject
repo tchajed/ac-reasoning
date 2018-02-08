@@ -1,3 +1,4 @@
 -R src/ AC
 
 src/AssociativeCommutative.v
+src/GroupEqual.v

@@ -2,8 +2,8 @@ Set Implicit Arguments.
 
 Require Import Quote.
 Require Import Permutation.
-Require Import Recdef FunInd.
-Require Import Omega.
+Require Import GroupEqual.
+
 Require List.
 Import List.ListNotations.
 Open Scope list.
@@ -12,134 +12,6 @@ Definition nat_eq_dec : forall (x y:nat), {x=y}+{x<>y}.
 Proof.
   decide equality.
 Defined.
-
-Section GroupEqual.
-
-  Fixpoint gather_eq A (equal: A -> A -> bool) (x0: A) (acc: list A) (l: list A) : list A * list A :=
-    match l with
-    | [] => (acc, l)
-    | x::xs => if equal x x0 then
-                gather_eq equal x0 (acc ++ [x]) xs
-              else
-                let (xs, l') := gather_eq equal x0 acc xs in
-                (xs, x::l')
-    end.
-
-  Example gather_eq_ex1 :
-    gather_eq (fun x y => if PeanoNat.Nat.eq_dec x y then true else false)
-              3 [] [2;3;4;3;2;3;5] =
-    ([3;3;3], [2;4;2;5]) := eq_refl.
-
-  Definition gather_eq1 A equal (x:A) l : list A :=
-    fst (gather_eq equal x [] l).
-
-  Definition gather_eq2 A equal (x:A) l : list A :=
-    snd (gather_eq equal x [] l).
-
-  Theorem gather_eq_lengths : forall A (equal: A -> A -> bool) x l acc xs l',
-      gather_eq equal x acc l = (xs, l') ->
-      length xs + length l' = length acc + length l.
-  Proof.
-    induction l; simpl; intros; auto.
-    inversion H; subst; auto.
-    destruct (equal a x); simpl.
-    apply IHl in H; simpl in *.
-    rewrite List.app_length in *; simpl in *.
-    omega.
-    destruct_with_eqn (gather_eq equal x acc l); simpl in *.
-    inversion H; subst; clear H; simpl.
-    apply IHl in Heqp.
-    omega.
-  Qed.
-
-  Lemma gather_eq12_lengths : forall A equal (x:A) l,
-      length (gather_eq1 equal x l) + length (gather_eq2 equal x l) = length l.
-  Proof.
-    unfold gather_eq1, gather_eq2; intros.
-    destruct_with_eqn (gather_eq equal x [] l).
-    apply gather_eq_lengths in Heqp; simpl in *; auto.
-  Qed.
-
-  Lemma gather_eq2_smaller : forall A equal (x:A) xs,
-      length (gather_eq2 equal x xs) < S (length xs).
-  Proof.
-    intros.
-    pose proof (gather_eq12_lengths equal x xs).
-    omega.
-  Qed.
-
-  Hint Resolve gather_eq2_smaller.
-
-  Function group_eq A (equal: A -> A -> bool) (l: list A) {measure length l} : list A :=
-    match l with
-    | [] => []
-    | x::xs => x::gather_eq1 equal x xs ++ group_eq equal (gather_eq2 equal x xs)
-    end.
-  Proof.
-    simpl; intros; subst; auto.
-  Qed.
-
-  Theorem group_eq_length : forall A equal (l: list A),
-      length (group_eq equal l) = length l.
-  Proof.
-    intros.
-    remember (length l).
-    generalize dependent l.
-    induction n using lt_wf_ind; intros; subst.
-    rewrite group_eq_equation.
-    destruct l; intros; subst; simpl in *; auto.
-    rewrite List.app_length.
-    erewrite H; try reflexivity.
-    rewrite gather_eq12_lengths; auto.
-    auto.
-  Qed.
-
-  Hint Constructors Permutation.
-  Hint Resolve Permutation_sym.
-  Hint Resolve Permutation_middle.
-
-  Theorem gather_eq_permutation : forall A equal (x:A) l acc xs l',
-      gather_eq equal x acc l = (xs, l') ->
-      Permutation (xs ++ l') (acc ++ l).
-  Proof.
-    induction l; simpl; intros.
-    inversion H; subst; clear H; simpl.
-    rewrite List.app_nil_r; auto.
-    destruct (equal a x).
-    apply IHl in H.
-    rewrite <- List.app_assoc in H; auto.
-    destruct_with_eqn (gather_eq equal x acc l).
-    inversion H; subst; clear H.
-    apply IHl in Heqp.
-    eauto.
-  Qed.
-
-  Theorem gather_eq12_permutation : forall A equal (x:A) l,
-      Permutation (gather_eq1 equal x l ++ gather_eq2 equal x l) l.
-  Proof.
-    unfold gather_eq1, gather_eq2; intros.
-    destruct_with_eqn (gather_eq equal x [] l); simpl.
-    apply gather_eq_permutation in Heqp; auto.
-  Qed.
-
-  Theorem group_eq_permutation : forall A equal (l: list A),
-      Permutation (group_eq equal l) l.
-  Proof.
-    intros.
-    remember (length l).
-    generalize dependent l.
-    induction n using lt_wf_ind; intros; subst.
-    rewrite group_eq_equation.
-    destruct l.
-    auto.
-    constructor.
-    transitivity (gather_eq1 equal a l ++ gather_eq2 equal a l);
-      [ | eauto using gather_eq12_permutation ].
-    eapply Permutation_app; eauto.
-    eapply H; simpl; eauto.
-  Qed.
-
-End GroupEqual.
 
 Class assoc_comm A (op: A -> A -> A) :=
   { associative : forall x y z, op (op x y) z = op x (op y z);
@@ -334,10 +206,6 @@ Section AssociativeCommutativeReasoning.
                    end
     end.
 
-  Ltac compute_group_eq :=
-    rewrite group_eq_equation; unfold gather_eq1, gather_eq2, gather_eq;
-    cbn [term_eq index_eq fst snd].
-
   Example op_term_ex1 : forall x y z,
       x ∘ y ∘ z ∘ x ∘ y = unit ∘ x ∘ x ∘ y ∘ y ∘ z.
   Proof.
@@ -349,7 +217,7 @@ Section AssociativeCommutativeReasoning.
     rewrite op_term_foldl_flatten_terms; cbn [flatten_terms app].
     erewrite op_foldl_permutation;
       [ | apply group_eq_permutation with (equal:=term_eq) ].
-    repeat compute_group_eq; cbn [app].
+    repeat (compute_group_eq; cbn [term_eq index_eq]); cbn [app].
     simpl.
     reflexivity.
   Qed.
