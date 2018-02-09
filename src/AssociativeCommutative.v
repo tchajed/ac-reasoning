@@ -12,14 +12,33 @@ Require List.
 Import List.ListNotations.
 Open Scope list.
 
-Definition nat_eq_dec : forall (x y:nat), {x=y}+{x<>y}.
-Proof.
-  decide equality.
-Defined.
+Section Typeclasses.
 
-Class assoc_comm A (op: A -> A -> A) (R: A -> A -> Prop) :=
-  { associative : forall x y z, R (op (op x y) z) (op x (op y z));
-    commutative : forall x y, R (op x y) (op y x); }.
+  Variable A:Type.
+
+  Class Associative (op: A -> A -> A) (R: A -> A -> Prop) :=
+    { associative: forall x y z, R (op (op x y) z) (op x (op y z)); }.
+
+  Class Commutative (op: A -> A -> A) (R: A -> A -> Prop) :=
+      { commutative : forall x y, R (op x y) (op y x); }.
+
+  Class Default :=
+    { default_val: A }.
+
+  Class AssociativeCommutative (op: A -> A -> A) (R: A -> A -> Prop) :=
+    { ac_associative :> Associative op R;
+      ac_commutative :> Commutative op R;
+      ac_equiv :> Equivalence R;
+      ac_def :> Default;
+      ac_op_respects_equiv : forall x x' y y',
+          R x x' ->
+          R y y' ->
+          R (op x y) (op x' y'); }.
+
+End Typeclasses.
+
+Arguments default_val {A} {_}.
+Arguments ac_def {A} {_}.
 
 Section AssociativeCommutativeReasoning.
 
@@ -30,27 +49,22 @@ Section AssociativeCommutativeReasoning.
   Variable equiv: A -> A -> Prop.
   Infix "==" := equiv (at level 60, no associativity).
 
-  Hypothesis op_ac : assoc_comm op equiv.
+  Hypothesis op_ac : AssociativeCommutative op equiv.
   Existing Instance op_ac.
-
-  Hypothesis def:A.
-
-  Hypothesis equiv_equivalence : Equivalence equiv.
-  Existing Instance equiv_equivalence.
-
-  Hypothesis op_respects_equiv : forall x x' y y',
-      x == x' ->
-      y == y' ->
-      x * y == x' * y'.
 
   Instance op_proper :
     Proper (equiv ==> equiv ==> equiv) op.
   Proof.
     unfold Proper, respectful; intros.
-    eapply op_respects_equiv; eauto.
+    eapply ac_op_respects_equiv; eauto.
   Qed.
 
-  Hint Resolve (@Equivalence_Reflexive A equiv equiv_equivalence).
+  Lemma equiv_refl : forall x, x == x.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Hint Resolve equiv_refl.
 
   Fixpoint op_foldl (acc:A) (l: list A) :=
     match l with
@@ -69,7 +83,7 @@ Section AssociativeCommutativeReasoning.
   Fixpoint op_tree (vm: varmap A) (t:binop_tree) :=
     match t with
     | Leaf x => x
-    | Atom i => varmap_find def i vm
+    | Atom i => varmap_find default_val i vm
     | Node l r => op_tree vm l * op_tree vm r
     end.
 
@@ -84,6 +98,7 @@ Section AssociativeCommutativeReasoning.
     rewrite IHl.
     rewrite IHl.
     apply associative.
+    typeclasses eauto.
   Qed.
 
   Instance op_foldl_proper :
@@ -93,7 +108,7 @@ Section AssociativeCommutativeReasoning.
     rename y0 into l.
     induction l; simpl; auto.
     rewrite ?op_foldl_acc.
-    auto.
+    eapply ac_op_respects_equiv; eauto.
   Qed.
 
   Lemma op_foldl_app : forall l1 acc x l,
@@ -116,7 +131,7 @@ Section AssociativeCommutativeReasoning.
   Fixpoint flatten vm (t:binop_tree) : nelist A :=
     match t with
     | Leaf x => single x
-    | Atom i => single (varmap_find def i vm)
+    | Atom i => single (varmap_find default_val i vm)
     | Node l r => append (flatten vm l) (flatten vm r)
     end.
 
@@ -124,7 +139,8 @@ Section AssociativeCommutativeReasoning.
       op_tree vm t == op_foldl1 (flatten vm t).
   Proof.
     induction t; simpl; auto.
-    rewrite op_foldl1_app; auto.
+    rewrite op_foldl1_app.
+    eapply ac_op_respects_equiv; eauto.
   Qed.
 
   Theorem a_ex1 : forall x y z,
@@ -148,7 +164,7 @@ Section AssociativeCommutativeReasoning.
   Definition find_term vm (t:term) : A :=
     match t with
     | term_atom x => x
-    | term_var i => varmap_find def i vm
+    | term_var i => varmap_find default_val i vm
     end.
 
   Fixpoint op_term_foldl (vm: varmap A) (acc:A) (l: list term) : A :=
@@ -175,6 +191,7 @@ Section AssociativeCommutativeReasoning.
     induction l; simpl; intros; auto.
     rewrite ?IHl.
     apply associative.
+    typeclasses eauto.
   Qed.
 
   Instance op_term_foldl_proper :
@@ -183,6 +200,7 @@ Section AssociativeCommutativeReasoning.
     unfold Proper, respectful; intros; subst.
     induction y1; simpl; auto.
     rewrite ?op_term_foldl_acc; auto.
+    eapply ac_op_respects_equiv; eauto.
   Qed.
 
   Lemma op_term_foldl_app : forall vm l1 acc x l,
@@ -207,13 +225,14 @@ Section AssociativeCommutativeReasoning.
   Proof.
     induction t; simpl; auto.
     rewrite op_term_foldl1_app; auto.
+    apply ac_op_respects_equiv; eauto.
   Qed.
 
   Lemma xzy_xyz_rewrite : forall x y z,
       x * z * y == x * y * z.
   Proof.
     intros.
-    rewrite ?associative.
+    rewrite ?associative by typeclasses eauto.
     rewrite (commutative z y); auto.
   Qed.
 
@@ -224,8 +243,9 @@ Section AssociativeCommutativeReasoning.
       op_term_foldl vm acc l1 == op_term_foldl vm acc l2.
   Proof.
     induction 1; simpl; auto.
-    rewrite commutative.
+    rewrite commutative by typeclasses eauto.
     rewrite ?op_term_foldl_acc; auto.
+    eapply ac_op_respects_equiv; eauto.
     rewrite xzy_xyz_rewrite; auto.
     etransitivity; eauto.
   Qed.
@@ -260,7 +280,7 @@ Section AssociativeCommutativeReasoning.
              end;
       simpl.
     apply op_foldl_permutation; eauto.
-    rewrite commutative; auto.
+    rewrite commutative by typeclasses eauto; eauto.
     destruct l'.
     exfalso; eapply Permutation_nil_cons; eauto.
     repeat especialize IHPermutation1.
