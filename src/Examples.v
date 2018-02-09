@@ -8,29 +8,21 @@ Require Import List.
 Import ListNotations.
 Open Scope list.
 
+Require Import Equivalences.
+
 Instance nat_plus_AC : AssociativeCommutative nat plus eq.
 Proof.
-  constructor; hnf; intros.
+  ac_instance.
   - rewrite Nat.add_assoc; auto.
   - apply Nat.add_comm.
-  - constructor; hnf; intros; congruence.
-  - exact 0.
-  - congruence.
 Qed.
 
 Instance list_AC A : AssociativeCommutative (list A) (app (A:=A)) (Permutation (A:=A)).
 Proof.
-  constructor; hnf.
-  - intros.
-    rewrite app_assoc; auto.
-  - intros.
-    apply Permutation_app_comm.
-  - constructor; hnf; intros; eauto.
-    apply Permutation_sym; auto.
-    econstructor; eauto.
-  - exact nil.
-  - intros.
-    eapply Permutation_app; eauto.
+  ac_instance.
+  - rewrite app_assoc; auto.
+  - apply Permutation_app_comm.
+  - eapply Permutation_app; eauto.
 Qed.
 
 Theorem nat_rewrite : forall (x y z w: nat),
@@ -63,4 +55,25 @@ Proof.
                     (((((x ++ x) ++ y) ++ y) ++ z) ++ w) ] =>
     reflexivity
   end.
+Qed.
+
+(** TODO: multiple AC instances for different operations confuse the rewrite;
+    should be more careful about instantiating the typeclasses once and for all *)
+Instance nat_mult_AC : AssociativeCommutative nat mult eq.
+Proof.
+  ac_instance.
+  - rewrite Nat.mul_assoc; auto.
+  - rewrite Nat.mul_comm; auto.
+Qed.
+
+Instance prop_and_AC : AssociativeCommutative Prop and iff.
+Proof.
+  ac_instance; intuition auto.
+  exact True.
+Qed.
+
+Instance prop_or_AC : AssociativeCommutative Prop or iff.
+Proof.
+  ac_instance; intuition auto.
+  exact False.
 Qed.

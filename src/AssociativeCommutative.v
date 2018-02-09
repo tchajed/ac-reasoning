@@ -434,3 +434,13 @@ Ltac ac_simplify :=
                  varmap.find term_eq varmap.index_eq Nat.eqb
                  fst snd hd tl app
                  gather_eq gather_eq1 gather_eq2]).
+
+Ltac ac_instance :=
+  constructor; hnf; intros;
+  [ (* assoc *) | (* comm *) |
+    (* equivalence relation *)
+    typeclasses eauto |
+    (* default *)
+    try constructor |
+    (* respectful *)
+    try congruence ].
