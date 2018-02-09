@@ -17,13 +17,13 @@ Section Typeclasses.
   Variable A:Type.
 
   Class Associative (op: A -> A -> A) (R: A -> A -> Prop) :=
-    { associative: forall x y z, R (op (op x y) z) (op x (op y z)); }.
+    associative: forall x y z, R (op (op x y) z) (op x (op y z)).
 
   Class Commutative (op: A -> A -> A) (R: A -> A -> Prop) :=
-      { commutative : forall x y, R (op x y) (op y x); }.
+    commutative : forall x y, R (op x y) (op y x).
 
   Class Default :=
-    { default_val: A }.
+    default_val: A.
 
   Class AssociativeCommutative (op: A -> A -> A) (R: A -> A -> Prop) :=
     { ac_associative :> Associative op R;
@@ -37,6 +37,9 @@ Section Typeclasses.
 
 End Typeclasses.
 
+Arguments Associative A op R : clear implicits.
+Arguments Commutative A op R : clear implicits.
+Arguments AssociativeCommutative A op R : clear implicits.
 Arguments default_val {A} {_}.
 Arguments ac_def {A} {_}.
 
@@ -49,7 +52,7 @@ Section AssociativeCommutativeReasoning.
   Variable equiv: A -> A -> Prop.
   Infix "==" := equiv (at level 60, no associativity).
 
-  Hypothesis op_ac : AssociativeCommutative op equiv.
+  Hypothesis op_ac : AssociativeCommutative A op equiv.
   Existing Instance op_ac.
 
   Instance op_proper :
@@ -333,3 +336,5 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
 End AssociativeCommutativeReasoning.
+
+Arguments Atom {A} i.
