@@ -6,6 +6,8 @@ Require Import GroupEqual.
 Require Import RelationClasses.
 Require Import Morphisms.
 
+Require Import NonEmptyList.
+
 Require List.
 Import List.ListNotations.
 Open Scope list.
@@ -19,10 +21,6 @@ Class assoc_comm A (op: A -> A -> A) (R: A -> A -> Prop) :=
   { associative : forall x y z, R (op (op x y) z) (op x (op y z));
     commutative : forall x y, R (op x y) (op y x); }.
 
-Class monoid A (op: A -> A -> A) R :=
-  { unit: A;
-    left_id : forall x, R (op unit x) x; }.
-
 Section AssociativeCommutativeReasoning.
 
   Variable A:Type.
@@ -35,8 +33,7 @@ Section AssociativeCommutativeReasoning.
   Hypothesis op_ac : assoc_comm op equiv.
   Existing Instance op_ac.
 
-  Hypothesis op_monoid : monoid op equiv.
-  Existing Instance op_monoid.
+  Hypothesis def:A.
 
   Hypothesis equiv_equivalence : Equivalence equiv.
   Existing Instance equiv_equivalence.
@@ -55,18 +52,14 @@ Section AssociativeCommutativeReasoning.
 
   Hint Resolve (@Equivalence_Reflexive A equiv equiv_equivalence).
 
-  Lemma right_id : forall x, x * unit == x.
-  Proof.
-    intros.
-    rewrite commutative.
-    apply left_id.
-  Qed.
-
   Fixpoint op_foldl (acc:A) (l: list A) :=
     match l with
     | [] => acc
     | x::xs => op_foldl (op acc x) xs
     end.
+
+  Definition op_foldl1 (l: nelist A) :=
+    op_foldl (hd l) (tl l).
 
   Inductive binop_tree :=
   | Leaf (x:A)
@@ -76,7 +69,7 @@ Section AssociativeCommutativeReasoning.
   Fixpoint op_tree (vm: varmap A) (t:binop_tree) :=
     match t with
     | Leaf x => x
-    | Atom i => varmap_find unit i vm
+    | Atom i => varmap_find def i vm
     | Node l r => op_tree vm l * op_tree vm r
     end.
 
@@ -103,38 +96,35 @@ Section AssociativeCommutativeReasoning.
     auto.
   Qed.
 
-  Lemma op_foldl_acc_unit:
-    forall (l: list A) (acc : A),
-      op_foldl acc l == acc * op_foldl unit l.
-  Proof.
-    intros.
-    rewrite <- (right_id acc) at 1.
-    apply op_foldl_acc.
-  Qed.
-
-  Lemma op_foldl_app : forall l1 acc l2,
-      op_foldl acc (l1 ++ l2) ==
-      op_foldl acc l1 * op_foldl unit l2.
+  Lemma op_foldl_app : forall l1 acc x l,
+      op_foldl acc (l1 ++ x::l) ==
+      op_foldl acc l1 * op_foldl x l.
   Proof.
     induction l1; simpl; intros; auto.
-    apply op_foldl_acc_unit.
+    rewrite op_foldl_acc; auto.
   Qed.
 
-  Fixpoint flatten vm (t:binop_tree) : list A :=
+  Lemma op_foldl1_app : forall l1 l2,
+      op_foldl1 (append l1 l2) ==
+      op_foldl1 l1 * op_foldl1 l2.
+  Proof.
+    unfold op_foldl1.
+    destruct l1, l2; simpl; intros; auto.
+    apply op_foldl_app.
+  Qed.
+
+  Fixpoint flatten vm (t:binop_tree) : nelist A :=
     match t with
-    | Leaf x => [x]
-    | Atom i => [varmap_find unit i vm]
-    | Node l r => flatten vm l ++ flatten vm r
+    | Leaf x => single x
+    | Atom i => single (varmap_find def i vm)
+    | Node l r => append (flatten vm l) (flatten vm r)
     end.
 
   Theorem op_tree_flatten : forall vm t,
-      op_tree vm t == op_foldl unit (flatten vm t).
+      op_tree vm t == op_foldl1 (flatten vm t).
   Proof.
-    induction t; simpl.
-    rewrite left_id; auto.
-    rewrite left_id; auto.
-    rewrite op_foldl_app.
-    auto.
+    induction t; simpl; auto.
+    rewrite op_foldl1_app; auto.
   Qed.
 
   Theorem a_ex1 : forall x y z,
@@ -158,7 +148,7 @@ Section AssociativeCommutativeReasoning.
   Definition find_term vm (t:term) : A :=
     match t with
     | term_atom x => x
-    | term_var i => varmap_find unit i vm
+    | term_var i => varmap_find def i vm
     end.
 
   Fixpoint op_term_foldl (vm: varmap A) (acc:A) (l: list term) : A :=
@@ -167,11 +157,14 @@ Section AssociativeCommutativeReasoning.
     | x::xs => op_term_foldl vm (acc * find_term vm x) xs
     end.
 
-  Fixpoint flatten_terms (t:binop_tree) : list term :=
+  Definition op_term_foldl1 (vm: varmap A) (l: nelist term) : A :=
+    op_term_foldl vm (find_term vm (hd l)) (tl l).
+
+  Fixpoint flatten_terms (t:binop_tree) : nelist term :=
     match t with
-    | Leaf x => [term_atom x]
-    | Atom i => [term_var i]
-    | Node l r => flatten_terms l ++ flatten_terms r
+    | Leaf x => single (term_atom x)
+    | Atom i => single (term_var i)
+    | Node l r => append (flatten_terms l) (flatten_terms r)
     end.
 
   Lemma op_term_foldl_acc:
@@ -192,30 +185,28 @@ Section AssociativeCommutativeReasoning.
     rewrite ?op_term_foldl_acc; auto.
   Qed.
 
-  Lemma op_term_foldl_acc_unit:
-    forall (l: list term) vm (acc : A),
-      op_term_foldl vm acc l == acc * op_term_foldl vm unit l.
-  Proof.
-    intros.
-    rewrite <- (right_id acc) at 1.
-    apply op_term_foldl_acc.
-  Qed.
-
-  Lemma op_term_foldl_app : forall l1 vm acc l2,
-      op_term_foldl vm acc (l1 ++ l2) ==
-      op_term_foldl vm acc l1 * op_term_foldl vm unit l2.
+  Lemma op_term_foldl_app : forall vm l1 acc x l,
+      op_term_foldl vm acc (l1 ++ x::l) ==
+      op_term_foldl vm acc l1 * op_term_foldl vm (find_term vm x) l.
   Proof.
     induction l1; simpl; intros; auto.
-    apply op_term_foldl_acc_unit.
+    rewrite op_term_foldl_acc; auto.
+  Qed.
+
+  Lemma op_term_foldl1_app : forall l1 vm l2,
+      op_term_foldl1 vm (append l1 l2) ==
+      op_term_foldl1 vm l1 * op_term_foldl1 vm l2.
+  Proof.
+    unfold op_term_foldl1.
+    destruct l1, l2; simpl; intros.
+    apply op_term_foldl_app.
   Qed.
 
   Theorem op_term_foldl_flatten_terms : forall vm t,
-      op_tree vm t == op_term_foldl vm unit (flatten_terms t).
+      op_tree vm t == op_term_foldl1 vm (flatten_terms t).
   Proof.
-    induction t; simpl.
-    rewrite left_id; auto.
-    rewrite left_id; auto.
-    rewrite op_term_foldl_app; auto.
+    induction t; simpl; auto.
+    rewrite op_term_foldl1_app; auto.
   Qed.
 
   Lemma xzy_xyz_rewrite : forall x y z,
@@ -229,13 +220,51 @@ Section AssociativeCommutativeReasoning.
   Hint Resolve xzy_xyz_rewrite.
 
   Theorem op_foldl_permutation : forall vm acc (l1 l2: list term),
-      Permutation l2 l1 ->
+      Permutation l1 l2 ->
       op_term_foldl vm acc l1 == op_term_foldl vm acc l2.
   Proof.
     induction 1; simpl; auto.
     rewrite commutative.
     rewrite ?op_term_foldl_acc; auto.
     rewrite xzy_xyz_rewrite; auto.
+    etransitivity; eauto.
+  Qed.
+
+  Ltac especialize H :=
+    lazymatch type of H with
+    | forall (_: _ = _), _ =>
+      specialize (H eq_refl)
+    | forall (_:?T), _ =>
+      let x := fresh "x" in
+      evar (x:T);
+      specialize (H x);
+      subst x
+    end.
+
+  Theorem op_foldl_permutation_general : forall vm acc1 acc2 (l1 l2: list term),
+      Permutation (acc1::l1) (acc2::l2) ->
+      op_term_foldl vm (find_term vm acc1) l1 ==
+      op_term_foldl vm (find_term vm acc2) l2.
+  Proof.
+    intros.
+    remember (acc1::l1) as l1'.
+    remember (acc2::l2) as l2'.
+    generalize dependent acc1.
+    generalize dependent l1.
+    generalize dependent acc2.
+    generalize dependent l2.
+    induction H; intros; subst; try congruence;
+      repeat match goal with
+             | [ H: _ :: _ = _ :: _ |- _ ] =>
+               inversion H; subst; clear H
+             end;
+      simpl.
+    apply op_foldl_permutation; eauto.
+    rewrite commutative; auto.
+    destruct l'.
+    exfalso; eapply Permutation_nil_cons; eauto.
+    repeat especialize IHPermutation1.
+    repeat especialize IHPermutation2.
     etransitivity; eauto.
   Qed.
 
@@ -248,20 +277,39 @@ Section AssociativeCommutativeReasoning.
                    end
     end.
 
+  Theorem op_term_foldl1_group : forall vm (l: nelist term),
+      op_term_foldl1 vm l ==
+      let (x, l') := l in
+      op_term_foldl vm
+                    (find_term vm x)
+                    (gather_eq1 term_eq (hd l) l' ++
+                                group_eq term_eq (gather_eq2 term_eq (hd l) l')).
+  Proof.
+    unfold op_term_foldl1.
+    destruct l; simpl.
+    eapply op_foldl_permutation.
+    symmetry.
+    transitivity (gather_eq1 term_eq t l ++ gather_eq2 term_eq t l).
+    eapply Permutation_app; eauto.
+    eapply group_eq_permutation.
+    apply gather_eq12_permutation.
+  Qed.
+
   Example op_term_ex1 : forall x y z,
-      x * y * z * x * y == unit * x * x * y * y * z.
+      x * y * z * x * y == x * x * y * y * z.
   Proof.
     intros.
     match goal with
     | [ |- ?t == _ ] =>
       quote_tree t
     end.
-    rewrite op_term_foldl_flatten_terms; cbn [flatten_terms app].
-    erewrite op_foldl_permutation;
-      [ | apply group_eq_permutation with (equal:=term_eq) ].
-    repeat (compute_group_eq; cbn [term_eq index_eq]); cbn [app].
+    rewrite op_term_foldl_flatten_terms; cbn [flatten_terms append single app].
+    rewrite op_term_foldl1_group; cbn beta iota zeta delta [find_term varmap_find hd tl].
+    repeat (compute_group_eq; cbn beta iota zeta delta [term_eq index_eq fst snd app]).
     simpl.
-    reflexivity.
+    match goal with
+    | [ |- ?t == ?t ] => reflexivity
+    end.
   Qed.
 
 End AssociativeCommutativeReasoning.

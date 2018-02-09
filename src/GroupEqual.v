@@ -135,8 +135,8 @@ Section GroupEqual.
 End GroupEqual.
 
 Ltac compute_group_eq :=
-  rewrite group_eq_equation; unfold gather_eq1, gather_eq2, gather_eq;
-  cbn [fst snd].
+  rewrite group_eq_equation; unfold gather_eq1, gather_eq2;
+  cbn beta iota zeta delta [gather_eq fst snd].
 
 Module Examples.
 
