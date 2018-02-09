@@ -1,6 +1,5 @@
 Set Implicit Arguments.
 
-Require Import Quote.
 Require Import Permutation.
 Require Import GroupEqual.
 Require Import RelationClasses.
@@ -43,6 +42,94 @@ Arguments AssociativeCommutative A op R : clear implicits.
 Arguments default_val {A} {_}.
 Arguments ac_def {A} {_}.
 
+Module varmap.
+  Definition I := nat.
+  Inductive t (A:Type) : Type :=
+  | empty
+  | cons (i:I) (x:A) (xs:t A).
+
+  Definition index_eq (i1 i2:I) : bool :=
+    Nat.eqb i1 i2.
+
+  Theorem index_eq_prop : forall i1 i2,
+      index_eq i1 i2 = true <-> i1 = i2.
+  Proof.
+    apply PeanoNat.Nat.eqb_eq.
+  Qed.
+
+  Fixpoint find {A} `{Default A} (i:nat) (vm: t A) : A :=
+    match vm with
+    | empty _ => default_val
+    | cons i' x vm' => if Nat.eqb i i' then x else find i vm'
+    end.
+
+  Fixpoint length A (ctx: t A) : nat :=
+    match ctx with
+    | empty _ => O
+    | cons _ _ ctx' => S (length ctx')
+    end.
+
+End varmap.
+
+Section BinOps.
+
+  Inductive binop_tree {A} :=
+  | Leaf (x:A)
+  | Atom (i:varmap.I)
+  | Node (l:binop_tree) (r:binop_tree).
+
+  Fixpoint op_tree A `{Default A} (op: A -> A -> A) (vm: varmap.t A) t :=
+    match t with
+    | Leaf x => x
+    | Atom i => varmap.find i vm
+    | Node l r => op (op_tree op vm l) (op_tree op vm r)
+    end.
+
+End BinOps.
+
+Arguments binop_tree A : clear implicits.
+
+Ltac reify_helper op var term ctx :=
+  let reify_rec term ctx := reify_helper op var term ctx in
+  lazymatch ctx with
+  | context[varmap.cons ?i term _] =>
+    constr:( (ctx, @Atom var i) )
+  | _ =>
+    lazymatch term with
+    | op ?x ?y =>
+      let ctx_x := reify_rec x ctx in
+      let ctx_y := reify_rec y (fst ctx_x) in
+      let r := (eval cbv [fst snd] in
+                   (fst ctx_y, @Node var (snd ctx_x) (snd ctx_y))) in
+      constr:(r)
+    | _ =>
+      let v' := (eval cbv [varmap.length] in (varmap.length ctx)) in
+      let ctx' := constr:( varmap.cons v' term ctx ) in
+      constr:( (ctx', @Atom var v') )
+    end
+  end.
+
+Ltac reify op term :=
+  lazymatch type of term with
+  | ?A => reify_helper op A term (varmap.empty A)
+  end.
+
+Ltac quote_with ctx term :=
+  lazymatch term with
+  | ?op _ _ =>
+    lazymatch type of term with
+    | ?A => let ctx_x := reify_helper op A term ctx in
+             let ctx := (eval cbv [fst] in (fst ctx_x)) in
+             let x := (eval cbv [snd] in (snd ctx_x)) in
+             change term with (op_tree op ctx x)
+    end
+  end.
+
+Ltac quote term :=
+  match type of term with
+  | ?A => quote_with (varmap.empty A) term
+  end.
+
 Section AssociativeCommutativeReasoning.
 
   Variable A:Type.
@@ -77,21 +164,6 @@ Section AssociativeCommutativeReasoning.
 
   Definition op_foldl1 (l: nelist A) :=
     op_foldl (hd l) (tl l).
-
-  Inductive binop_tree :=
-  | Leaf (x:A)
-  | Atom (i:index)
-  | Node (l:binop_tree) (r:binop_tree).
-
-  Fixpoint op_tree (vm: varmap A) (t:binop_tree) :=
-    match t with
-    | Leaf x => x
-    | Atom i => varmap_find default_val i vm
-    | Node l r => op_tree vm l * op_tree vm r
-    end.
-
-  Ltac quote_tree t :=
-    quote op_tree in t using (fun t' => change t with t').
 
   Lemma op_foldl_acc:
     forall (l: list A) (acc1 : A) (acc2: A),
@@ -131,15 +203,15 @@ Section AssociativeCommutativeReasoning.
     apply op_foldl_app.
   Qed.
 
-  Fixpoint flatten vm (t:binop_tree) : nelist A :=
+  Fixpoint flatten vm (t:binop_tree A) : nelist A :=
     match t with
     | Leaf x => single x
-    | Atom i => single (varmap_find default_val i vm)
+    | Atom i => single (varmap.find i vm)
     | Node l r => append (flatten vm l) (flatten vm r)
     end.
 
   Theorem op_tree_flatten : forall vm t,
-      op_tree vm t == op_foldl1 (flatten vm t).
+      op_tree op vm t == op_foldl1 (flatten vm t).
   Proof.
     induction t; simpl; auto.
     rewrite op_foldl1_app.
@@ -152,34 +224,34 @@ Section AssociativeCommutativeReasoning.
     intros.
     match goal with
     | [ |- ?t == ?t' ] =>
-      quote_tree t; quote_tree t'
+      quote t; quote t'
     end.
 
     rewrite !op_tree_flatten.
-    simpl.
+    cbv.
     reflexivity.
   Qed.
 
   Inductive term :=
   | term_atom : A -> term
-  | term_var : index -> term.
+  | term_var : varmap.I -> term.
 
   Definition find_term vm (t:term) : A :=
     match t with
     | term_atom x => x
-    | term_var i => varmap_find default_val i vm
+    | term_var i => varmap.find i vm
     end.
 
-  Fixpoint op_term_foldl (vm: varmap A) (acc:A) (l: list term) : A :=
+  Fixpoint op_term_foldl (vm: varmap.t A) (acc:A) (l: list term) : A :=
     match l with
     | nil => acc
     | x::xs => op_term_foldl vm (acc * find_term vm x) xs
     end.
 
-  Definition op_term_foldl1 (vm: varmap A) (l: nelist term) : A :=
+  Definition op_term_foldl1 (vm: varmap.t A) (l: nelist term) : A :=
     op_term_foldl vm (find_term vm (hd l)) (tl l).
 
-  Fixpoint flatten_terms (t:binop_tree) : nelist term :=
+  Fixpoint flatten_terms (t:binop_tree A) : nelist term :=
     match t with
     | Leaf x => single (term_atom x)
     | Atom i => single (term_var i)
@@ -224,7 +296,7 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Theorem op_term_foldl_flatten_terms : forall vm t,
-      op_tree vm t == op_term_foldl1 vm (flatten_terms t).
+      op_tree op vm t == op_term_foldl1 vm (flatten_terms t).
   Proof.
     induction t; simpl; auto.
     rewrite op_term_foldl1_app; auto.
@@ -296,7 +368,7 @@ Section AssociativeCommutativeReasoning.
     | term_atom _ => false
     | term_var i => match t2 with
                    | term_atom _ => false
-                   | term_var i' => index_eq i i'
+                   | term_var i' => varmap.index_eq i i'
                    end
     end.
 
@@ -322,19 +394,43 @@ Section AssociativeCommutativeReasoning.
       x * y * z * x * y == x * x * y * y * z.
   Proof.
     intros.
-    match goal with
+    lazymatch goal with
     | [ |- ?t == _ ] =>
-      quote_tree t
+      quote t;
+        lazymatch goal with
+        | [ |- op_tree _ ?ctx _ == ?t' ] =>
+          quote_with ctx t'
+        | _ => idtac
+        end
     end.
-    rewrite op_term_foldl_flatten_terms; cbn [flatten_terms append single app].
-    rewrite op_term_foldl1_group; cbn beta iota zeta delta [find_term varmap_find hd tl].
-    repeat (compute_group_eq; cbn beta iota zeta delta [term_eq index_eq fst snd app]).
-    simpl.
+    rewrite !op_term_foldl_flatten_terms; cbv [flatten_terms append single app].
+    rewrite !op_term_foldl1_group; cbv [find_term].
+    repeat (rewrite group_eq_equation;
+            cbv beta iota zeta delta
+                [op_term_foldl find_term
+                   varmap.find term_eq varmap.index_eq Nat.eqb
+                   fst snd hd tl app
+                   gather_eq gather_eq1 gather_eq2]).
     match goal with
-    | [ |- ?t == ?t ] => reflexivity
+    | |- ?t == ?t => reflexivity
     end.
   Qed.
 
 End AssociativeCommutativeReasoning.
 
-Arguments Atom {A} i.
+Ltac requote term :=
+  match goal with
+  | [ |- context[op_tree _ ?ctx _] ] =>
+    quote_with ctx term
+  end.
+
+Ltac ac_simplify :=
+  rewrite !op_term_foldl_flatten_terms; cbn [flatten_terms append single app];
+  rewrite !op_term_foldl1_group; cbn [find_term];
+  repeat (rewrite group_eq_equation;
+          cbn beta iota zeta delta
+              [op_term_foldl
+                 find_term
+                 varmap.find term_eq varmap.index_eq Nat.eqb
+                 fst snd hd tl app
+                 gather_eq gather_eq1 gather_eq2]).

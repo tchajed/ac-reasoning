@@ -1,9 +1,18 @@
 # Associative Commutative reasoning in Coq
 
-This library (aims to) provide a tactic for automating associative-commutative reasoning. Here's a simple use case:
+This library provide a tactic for automating associative-commutative reasoning. Here's a simple example case:
 
 ```
-Theorem list_rewrite : forall A (l1 l2 l3 l4: list A),
-  Permutation (l1 ++ l2 ++ l1 ++ l3 ++ l2 ++ l4)
-              (l1 ++ l1 ++ l3 ++ l2 ++ l2 ++ l4).
+Theorem list_rewrite : forall A (x y z w: list A),
+    Permutation (x ++ y ++ x ++ z ++ y ++ w)
+                (x ++ x ++ y ++ z ++ y ++ w).
+Proof.
+  intros.
+  match goal with
+  | [ |- Permutation ?t ?t' ] =>
+    quote t; requote t'
+  end.
+  ac_simplify.
+  reflexivity.
+Qed.
 ```
