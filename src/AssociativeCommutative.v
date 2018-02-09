@@ -3,6 +3,8 @@ Set Implicit Arguments.
 Require Import Quote.
 Require Import Permutation.
 Require Import GroupEqual.
+Require Import RelationClasses.
+Require Import Morphisms.
 
 Require List.
 Import List.ListNotations.
@@ -13,13 +15,13 @@ Proof.
   decide equality.
 Defined.
 
-Class assoc_comm A (op: A -> A -> A) :=
-  { associative : forall x y z, op (op x y) z = op x (op y z);
-    commutative : forall x y, op x y = op y x; }.
+Class assoc_comm A (op: A -> A -> A) (R: A -> A -> Prop) :=
+  { associative : forall x y z, R (op (op x y) z) (op x (op y z));
+    commutative : forall x y, R (op x y) (op y x); }.
 
-Class monoid A (op: A -> A -> A) :=
+Class monoid A (op: A -> A -> A) R :=
   { unit: A;
-    left_id : forall x, op unit x = x; }.
+    left_id : forall x, R (op unit x) x; }.
 
 Section AssociativeCommutativeReasoning.
 
@@ -27,13 +29,33 @@ Section AssociativeCommutativeReasoning.
   Variable op: A -> A -> A.
   Infix "*" := op.
 
-  Hypothesis op_ac : assoc_comm op.
+  Variable equiv: A -> A -> Prop.
+  Infix "==" := equiv (at level 60, no associativity).
+
+  Hypothesis op_ac : assoc_comm op equiv.
   Existing Instance op_ac.
 
-  Hypothesis op_monoid : monoid op.
+  Hypothesis op_monoid : monoid op equiv.
   Existing Instance op_monoid.
 
-  Lemma right_id : forall x, x * unit = x.
+  Hypothesis equiv_equivalence : Equivalence equiv.
+  Existing Instance equiv_equivalence.
+
+  Hypothesis op_respects_equiv : forall x x' y y',
+      x == x' ->
+      y == y' ->
+      x * y == x' * y'.
+
+  Instance op_proper :
+    Proper (equiv ==> equiv ==> equiv) op.
+  Proof.
+    unfold Proper, respectful; intros.
+    eapply op_respects_equiv; eauto.
+  Qed.
+
+  Hint Resolve (@Equivalence_Reflexive A equiv equiv_equivalence).
+
+  Lemma right_id : forall x, x * unit == x.
   Proof.
     intros.
     rewrite commutative.
@@ -63,16 +85,27 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_foldl_acc:
     forall (l: list A) (acc1 : A) (acc2: A),
-      op_foldl (acc1 * acc2) l = acc1 * op_foldl acc2 l.
+      op_foldl (acc1 * acc2) l == acc1 * op_foldl acc2 l.
   Proof.
     induction l; simpl; intros; auto.
-    rewrite associative.
+    rewrite IHl.
+    rewrite IHl.
+    apply associative.
+  Qed.
+
+  Instance op_foldl_proper :
+    Proper (equiv ==> eq ==> equiv) op_foldl.
+  Proof.
+    unfold Proper, respectful; intros; subst.
+    rename y0 into l.
+    induction l; simpl; auto.
+    rewrite ?op_foldl_acc.
     auto.
   Qed.
 
   Lemma op_foldl_acc_unit:
     forall (l: list A) (acc : A),
-      op_foldl acc l = acc * op_foldl unit l.
+      op_foldl acc l == acc * op_foldl unit l.
   Proof.
     intros.
     rewrite <- (right_id acc) at 1.
@@ -80,7 +113,7 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Lemma op_foldl_app : forall l1 acc l2,
-      op_foldl acc (l1 ++ l2) =
+      op_foldl acc (l1 ++ l2) ==
       op_foldl acc l1 * op_foldl unit l2.
   Proof.
     induction l1; simpl; intros; auto.
@@ -95,21 +128,21 @@ Section AssociativeCommutativeReasoning.
     end.
 
   Theorem op_tree_flatten : forall vm t,
-      op_tree vm t = op_foldl unit (flatten vm t).
+      op_tree vm t == op_foldl unit (flatten vm t).
   Proof.
     induction t; simpl.
     rewrite left_id; auto.
     rewrite left_id; auto.
     rewrite op_foldl_app.
-    congruence.
+    auto.
   Qed.
 
   Theorem a_ex1 : forall x y z,
-      x * y * (x * z) = x * y * x * z.
+      x * y * (x * z) == x * y * x * z.
   Proof.
     intros.
     match goal with
-    | [ |- ?t = ?t' ] =>
+    | [ |- ?t == ?t' ] =>
       quote_tree t; quote_tree t'
     end.
 
@@ -143,15 +176,25 @@ Section AssociativeCommutativeReasoning.
 
   Lemma op_term_foldl_acc:
     forall (l: list term) vm (acc1 : A) (acc2: A),
-      op_term_foldl vm (acc1 * acc2) l = acc1 * op_term_foldl vm acc2 l.
+      op_term_foldl vm (acc1 * acc2) l ==
+      acc1 * op_term_foldl vm acc2 l.
   Proof.
     induction l; simpl; intros; auto.
-    destruct a; rewrite ?associative; auto.
+    rewrite ?IHl.
+    apply associative.
+  Qed.
+
+  Instance op_term_foldl_proper :
+    Proper (eq ==> equiv ==> eq ==> equiv) op_term_foldl.
+  Proof.
+    unfold Proper, respectful; intros; subst.
+    induction y1; simpl; auto.
+    rewrite ?op_term_foldl_acc; auto.
   Qed.
 
   Lemma op_term_foldl_acc_unit:
     forall (l: list term) vm (acc : A),
-      op_term_foldl vm acc l = acc * op_term_foldl vm unit l.
+      op_term_foldl vm acc l == acc * op_term_foldl vm unit l.
   Proof.
     intros.
     rewrite <- (right_id acc) at 1.
@@ -159,7 +202,7 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Lemma op_term_foldl_app : forall l1 vm acc l2,
-      op_term_foldl vm acc (l1 ++ l2) =
+      op_term_foldl vm acc (l1 ++ l2) ==
       op_term_foldl vm acc l1 * op_term_foldl vm unit l2.
   Proof.
     induction l1; simpl; intros; auto.
@@ -167,34 +210,33 @@ Section AssociativeCommutativeReasoning.
   Qed.
 
   Theorem op_term_foldl_flatten_terms : forall vm t,
-      op_tree vm t = op_term_foldl vm unit (flatten_terms t).
+      op_tree vm t == op_term_foldl vm unit (flatten_terms t).
   Proof.
     induction t; simpl.
     rewrite left_id; auto.
     rewrite left_id; auto.
-    rewrite op_term_foldl_app; congruence.
+    rewrite op_term_foldl_app; auto.
   Qed.
 
   Lemma xzy_xyz_rewrite : forall x y z,
-      x * z * y = x * y * z.
+      x * z * y == x * y * z.
   Proof.
     intros.
     rewrite ?associative.
-    f_equal.
-    apply commutative.
+    rewrite (commutative z y); auto.
   Qed.
 
   Hint Resolve xzy_xyz_rewrite.
 
   Theorem op_foldl_permutation : forall vm acc (l1 l2: list term),
       Permutation l2 l1 ->
-      op_term_foldl vm acc l1 = op_term_foldl vm acc l2.
+      op_term_foldl vm acc l1 == op_term_foldl vm acc l2.
   Proof.
     induction 1; simpl; auto.
-    replace (acc * find_term vm x) with (find_term vm x * acc) by (apply commutative).
-    rewrite ?op_term_foldl_acc; congruence.
+    rewrite commutative.
+    rewrite ?op_term_foldl_acc; auto.
     rewrite xzy_xyz_rewrite; auto.
-    congruence.
+    etransitivity; eauto.
   Qed.
 
   Definition term_eq (t1 t2: term) : bool :=
@@ -207,11 +249,11 @@ Section AssociativeCommutativeReasoning.
     end.
 
   Example op_term_ex1 : forall x y z,
-      x * y * z * x * y = unit * x * x * y * y * z.
+      x * y * z * x * y == unit * x * x * y * y * z.
   Proof.
     intros.
     match goal with
-    | [ |- ?t = _ ] =>
+    | [ |- ?t == _ ] =>
       quote_tree t
     end.
     rewrite op_term_foldl_flatten_terms; cbn [flatten_terms app].
